@@ -1,10 +1,11 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: MIT-0
 
-import { Stack, StackProps } from 'aws-cdk-lib';
+import { Duration, Stack, StackProps } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import { aws_iam as iam, aws_config as config, aws_events as events, aws_events_targets as targets,
-         aws_kms as kms, aws_lambda as lambda, aws_logs as logs, aws_sns as sns } from 'aws-cdk-lib';
+         aws_lambda as lambda, aws_logs as logs, aws_sqs as sqs } from 'aws-cdk-lib';
+import { RemediationStateMachineTarget } from './constructs/remediation-state-machine-target';
 
 interface DocumentDbConfigStackProps extends StackProps {
   clusterParameterGroup?: string;
@@ -110,21 +111,6 @@ export class AmazonDocumentdbAwsConfigStack extends Stack {
     });
 
     // remediation
-    // sns topic for notifications
-    const key = new kms.Key(this, 'Key');
-    key.addToResourcePolicy(new iam.PolicyStatement({
-      actions: [
-        'kms:GenerateDataKey',
-        'kms:Decrypt'
-      ],
-      principals: [new iam.ServicePrincipal('events.amazonaws.com')],
-      resources: ['*'],
-    }));
-
-    const topic = new sns.Topic(this, 'ComplianceNotificationsTopic', {
-      displayName: 'Compliance Notifications',
-      masterKey: key
-    });
 
     // cloudwatch log group for debugging purposes
     const logGroup = new logs.LogGroup(this, 'AuditLogGroup', {
@@ -132,136 +118,32 @@ export class AmazonDocumentdbAwsConfigStack extends Stack {
       retention: logs.RetentionDays.ONE_WEEK
     });
 
-    const notificationRule = new events.Rule(this, 'ComplianceNotificationRule', {
+    const stateMachineTarget = new RemediationStateMachineTarget(this, 'RemediationStateMachineTarget', {
+      clusterParameterGroup,
+      clusterBackupRetentionPeriod
+    });
+
+    const rule = new events.Rule(this, 'ComplianceRule', {
       eventPattern: {
         source: ['aws.config'],
         detailType: ['Config Rules Compliance Change'],
         detail: {
           messageType: ['ComplianceChangeNotification'],
+          configRuleName: [{prefix: 'documentdb-'}],
+          resourceType: ['AWS::RDS::DBCluster', 'AWS::RDS::DBInstance'],
           newEvaluationResult: {
-            complianceType: ['NON_COMPLIANT'],
-            evaluationResultIdentifier: {
-              evaluationResultQualifier: {
-                configRuleName: [{prefix: 'documentdb-'}]
-              }
-            }
-          },
-          resourceType: ['AWS::RDS::DBCluster', 'AWS::RDS::DBInstance']
+            complianceType: ['NON_COMPLIANT']
+          }
         }
       }
     });
 
-    notificationRule.addTarget(new targets.CloudWatchLogGroup(logGroup));
-    notificationRule.addTarget(new targets.SnsTopic(topic));
-
-    // parameter group remediation
-    // (the IAM role below can be shared among lambda functions that remediate
-    // wrong parameter group, backup retention period and deletion protection disabled 
-    // as they both perform the same operations and thus require same IAM permissions 
-    // with current implementation)
-    const remediationRole = new iam.Role(this, 'ParameterGroupRemediationRole', {
-      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com')
-    }); 
-    remediationRole.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'));
-    remediationRole.addToPolicy(new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      actions: [
-        'rds:DescribeDBClusters',
-        'rds:ModifyDBCluster'
-      ],
-      resources: ['*']
+    rule.addTarget(new targets.CloudWatchLogGroup(logGroup));
+    
+    rule.addTarget(new targets.SfnStateMachine(stateMachineTarget.stateMachine, {
+      deadLetterQueue: new sqs.Queue(this, 'DLQ'),
+      maxEventAge: Duration.seconds(60),
+      retryAttempts: 3
     }));
-
-    const parameterGroupRemediationFn = new lambda.Function(this, 'ParameterGroupRemediationFn', {
-      runtime: lambda.Runtime.NODEJS_16_X,
-      handler: 'index.handler',
-      code: lambda.Code.fromAsset('./lib/functions/cluster-parameter-group-remediation'),
-      role: remediationRole,
-      environment: {
-        DESIRED_CLUSTER_PARAMETER_GROUP: clusterParameterGroup
-      }
-    });
-
-    const parameterGroupRule = new events.Rule(this, 'ParameterGroupRule', {
-      eventPattern: {
-        source: ['aws.config'],
-        detailType: ['Config Rules Compliance Change'],
-        detail: {
-          messageType: ['ComplianceChangeNotification'],
-          newEvaluationResult: {
-            evaluationResultIdentifier: {
-              evaluationResultQualifier: {
-                configRuleName: ['documentdb-cluster-parameter-group']
-              }
-            },
-            complianceType: ['NON_COMPLIANT']
-          },
-          resourceType: ['AWS::RDS::DBCluster']
-        }
-      }
-    });
-
-    parameterGroupRule.addTarget(new targets.LambdaFunction(parameterGroupRemediationFn));
-
-    // cluster backup retention period
-    const backupRetentionRemediationFn = new lambda.Function(this, 'BackupRetentionRemediationFn', {
-      runtime: lambda.Runtime.NODEJS_16_X,
-      handler: 'index.handler',
-      code: lambda.Code.fromAsset('./lib/functions/cluster-backup-retention-remediation'),
-      role: remediationRole,
-      environment: {
-        DESIRED_CLUSTER_BACKUP_RETENTION_PERIOD: clusterBackupRetentionPeriod.toString()
-      }
-    });
-
-    const backupRetentionRule = new events.Rule(this, 'BackupRetentionRule', {
-      eventPattern: {
-        source: ['aws.config'],
-        detailType: ['Config Rules Compliance Change'],
-        detail: {
-          messageType: ['ComplianceChangeNotification'],
-          newEvaluationResult: {
-            evaluationResultIdentifier: {
-              evaluationResultQualifier: {
-                configRuleName: ['documentdb-cluster-backup-retention']
-              }
-            },
-            complianceType: ['NON_COMPLIANT']
-          },
-          resourceType: ['AWS::RDS::DBCluster']
-        }
-      }
-    });
-
-    backupRetentionRule.addTarget(new targets.LambdaFunction(backupRetentionRemediationFn));
-
-    // cluster deletion protection remediation
-    const deletionProtectionRemediationFn = new lambda.Function(this, 'DeletionProtectionRemediationFn', {
-      runtime: lambda.Runtime.NODEJS_16_X,
-      handler: 'index.handler',
-      code: lambda.Code.fromAsset('./lib/functions/cluster-deletion-protection-remediation'),
-      role: remediationRole
-    });
-
-    const deletionProtectionRule = new events.Rule(this, 'DelectionProtectionRule', {
-      eventPattern: {
-        source: ['aws.config'],
-        detailType: ['Config Rules Compliance Change'],
-        detail: {
-          messageType: ['ComplianceChangeNotification'],
-          newEvaluationResult: {
-            evaluationResultIdentifier: {
-              evaluationResultQualifier: {
-                configRuleName: ['documentdb-cluster-deletion-protection-enabled']
-              }
-            },
-            complianceType: ['NON_COMPLIANT']
-          },
-          resourceType: ['AWS::RDS::DBCluster']
-        }
-      }
-    });
-
-    deletionProtectionRule.addTarget(new targets.LambdaFunction(deletionProtectionRemediationFn));
   }
 }

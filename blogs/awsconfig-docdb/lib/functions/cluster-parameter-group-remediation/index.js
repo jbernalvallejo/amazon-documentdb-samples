@@ -12,7 +12,7 @@ exports.handler = async event => {
       throw new Error('Desired cluster parameter group not found');
     }
 
-    const {detail: {resourceId}} = event;
+    const {resourceId} = event;
     const dbClusterIdentifier = await getDbClusterIdentifier(resourceId);
     const params = {
       DBClusterIdentifier: dbClusterIdentifier,

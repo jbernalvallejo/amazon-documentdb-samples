@@ -12,7 +12,8 @@ exports.handler = async event => {
       throw new Error('Desired cluster backup retention period not found');
     }
 
-    const {detail: {resourceId}} = event;
+    console.log(event);
+    const {resourceId} = event;
     const dbClusterIdentifier = await getDbClusterIdentifier(resourceId);
     const params = {
       DBClusterIdentifier: dbClusterIdentifier,

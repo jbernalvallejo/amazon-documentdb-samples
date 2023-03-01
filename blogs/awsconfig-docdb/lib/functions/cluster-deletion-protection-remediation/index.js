@@ -6,7 +6,7 @@ const docDb = new aws.DocDB();
 
 exports.handler = async event => {
   try {
-    const {detail: {resourceId}} = event;
+    const {resourceId} = event;
     const dbClusterIdentifier = await getDbClusterIdentifier(resourceId);
     const params = {
       DBClusterIdentifier: dbClusterIdentifier,
