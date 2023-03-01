@@ -24,9 +24,9 @@ Resources are provisioned using the [AWS CDK framework](https://docs.aws.amazon.
 
 ## Requirements
 
-- Node.js 14.16.0 or above.
-- npm 7 or above.
-- [AWS CDK toolkit](https://docs.aws.amazon.com/cdk/latest/guide/cli.html) 1.95.1.
+- Node.js 16.13 or above.
+- npm 8.19 or above.
+- [AWS CDK toolkit](https://docs.aws.amazon.com/cdk/latest/guide/cli.html) 2.66.1.
 - [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html). You must have run `aws configure` to set up your terminal for the AWS account and region of your choice.
 
 ## Deployment

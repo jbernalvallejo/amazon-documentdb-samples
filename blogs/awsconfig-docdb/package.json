@@ -13,18 +13,10 @@
   "devDependencies": {
     "@types/node": "10.17.27",
     "ts-node": "^9.0.0",
-    "typescript": "~3.9.7"
+    "typescript": "~4.9.5"
   },
   "dependencies": {
-    "@aws-cdk/aws-config": "1.183.0",
-    "@aws-cdk/aws-events": "1.183.0",
-    "@aws-cdk/aws-events-targets": "1.183.0",
-    "@aws-cdk/aws-iam": "1.189.0",
-    "@aws-cdk/aws-kms": "1.189.0",
-    "@aws-cdk/aws-lambda": "1.189.0",
-    "@aws-cdk/aws-logs": "1.189.0",
-    "@aws-cdk/aws-sns": "1.183.0",
-    "@aws-cdk/core": "1.95.1",
-    "source-map-support": "^0.5.16"
+    "aws-cdk-lib": "^2.66.1",
+    "constructs": "^10.0.0"
   }
 }
