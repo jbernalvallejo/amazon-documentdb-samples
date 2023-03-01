@@ -16,7 +16,7 @@ export class AmazonDocumentdbAwsConfigStack extends Stack {
     super(scope, id, props);
 
     const clusterParameterGroup = props?.clusterParameterGroup || 'blogpost-param-group';
-    const backupRetentionPeriod = props?.backupRetentionPeriod || 7;
+    const clusterBackupRetentionPeriod = props?.backupRetentionPeriod || 7;
 
     // aws managed rules
     new config.ManagedRule(this, 'ClusterDeletionProtectionEnabled', {
@@ -78,7 +78,7 @@ export class AmazonDocumentdbAwsConfigStack extends Stack {
       description: 'Evaluates whether the cluster backup retention policy has been set to a greater value than the one provided as parameter',
       ruleScope: config.RuleScope.fromResources([config.ResourceType.RDS_DB_CLUSTER]),
       inputParameters: {
-        minBackupRetentionPeriod: backupRetentionPeriod
+        minBackupRetentionPeriod: clusterBackupRetentionPeriod
       }
     });
 
@@ -155,9 +155,10 @@ export class AmazonDocumentdbAwsConfigStack extends Stack {
     notificationRule.addTarget(new targets.SnsTopic(topic));
 
     // parameter group remediation
-    // (the IAM role below can be shared among both lambda functions that remediate
-    // wrong parameter group and deletion protection disabled as they both perform the
-    // same operations and thus require same IAM permissions with current implementation)
+    // (the IAM role below can be shared among lambda functions that remediate
+    // wrong parameter group, backup retention period and deletion protection disabled 
+    // as they both perform the same operations and thus require same IAM permissions 
+    // with current implementation)
     const remediationRole = new iam.Role(this, 'ParameterGroupRemediationRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com')
     }); 
@@ -201,6 +202,38 @@ export class AmazonDocumentdbAwsConfigStack extends Stack {
     });
 
     parameterGroupRule.addTarget(new targets.LambdaFunction(parameterGroupRemediationFn));
+
+    // cluster backup retention period
+    const backupRetentionRemediationFn = new lambda.Function(this, 'BackupRetentionRemediationFn', {
+      runtime: lambda.Runtime.NODEJS_16_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromAsset('./lib/functions/cluster-backup-retention-remediation'),
+      role: remediationRole,
+      environment: {
+        DESIRED_CLUSTER_BACKUP_RETENTION_PERIOD: clusterBackupRetentionPeriod.toString()
+      }
+    });
+
+    const backupRetentionRule = new events.Rule(this, 'BackupRetentionRule', {
+      eventPattern: {
+        source: ['aws.config'],
+        detailType: ['Config Rules Compliance Change'],
+        detail: {
+          messageType: ['ComplianceChangeNotification'],
+          newEvaluationResult: {
+            evaluationResultIdentifier: {
+              evaluationResultQualifier: {
+                configRuleName: ['documentdb-cluster-backup-retention']
+              }
+            },
+            complianceType: ['NON_COMPLIANT']
+          },
+          resourceType: ['AWS::RDS::DBCluster']
+        }
+      }
+    });
+
+    backupRetentionRule.addTarget(new targets.LambdaFunction(backupRetentionRemediationFn));
 
     // cluster deletion protection remediation
     const deletionProtectionRemediationFn = new lambda.Function(this, 'DeletionProtectionRemediationFn', {
