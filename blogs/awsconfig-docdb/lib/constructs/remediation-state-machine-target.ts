@@ -48,6 +48,7 @@ export class RemediationStateMachineTarget extends Construct {
       },
       tracing: lambda.Tracing.ACTIVE
     });
+    const parameterGroupRemediationLiveAlias = parameterGroupRemediationFn.addAlias('live');
 
     // cluster backup retention period
     const backupRetentionRemediationFn = new lambda.Function(this, 'BackupRetentionRemediationFn', {
@@ -60,6 +61,7 @@ export class RemediationStateMachineTarget extends Construct {
       },
       tracing: lambda.Tracing.ACTIVE
     });
+    const backupRetentionRemediationLiveAlias = backupRetentionRemediationFn.addAlias('live');
 
     // cluster deletion protection remediation
     const deletionProtectionRemediationFn = new lambda.Function(this, 'DeletionProtectionRemediationFn', {
@@ -69,6 +71,7 @@ export class RemediationStateMachineTarget extends Construct {
       role: remediationRole,
       tracing: lambda.Tracing.ACTIVE
     });
+    const deletionProtectionRemediationLiveAlias = deletionProtectionRemediationFn.addAlias('live');
 
     // state machine definition
     const notifyNonComplianceState = new tasks.SnsPublish(this, 'Notify non-compliance resource', { 
@@ -85,7 +88,7 @@ export class RemediationStateMachineTarget extends Construct {
     });
 
     const parameterGroupRemediationState = new tasks.LambdaInvoke(this, 'Parameter group', {
-      lambdaFunction: parameterGroupRemediationFn,
+      lambdaFunction: parameterGroupRemediationLiveAlias,
       payload: sf.TaskInput.fromObject({
         resourceId: sf.JsonPath.stringAt("$.resourceId")
       }),
@@ -96,7 +99,7 @@ export class RemediationStateMachineTarget extends Construct {
     });
 
     const backupRetentionRemediationState = new tasks.LambdaInvoke(this, 'Backup retention', {
-      lambdaFunction: backupRetentionRemediationFn,
+      lambdaFunction: backupRetentionRemediationLiveAlias,
       payload: sf.TaskInput.fromObject({
         resourceId: sf.JsonPath.stringAt("$.resourceId")
       }),
@@ -107,7 +110,7 @@ export class RemediationStateMachineTarget extends Construct {
     });
 
     const deletionProtectionRemediationState = new tasks.LambdaInvoke(this, 'Deletion protection', {
-      lambdaFunction: deletionProtectionRemediationFn,
+      lambdaFunction: deletionProtectionRemediationLiveAlias,
       payload: sf.TaskInput.fromObject({
         resourceId: sf.JsonPath.stringAt("$.resourceId")
       }),
