@@ -45,7 +45,8 @@ export class RemediationStateMachineTarget extends Construct {
       role: remediationRole,
       environment: {
         DESIRED_CLUSTER_PARAMETER_GROUP: props.clusterParameterGroup
-      }
+      },
+      tracing: lambda.Tracing.ACTIVE
     });
 
     // cluster backup retention period
@@ -56,7 +57,8 @@ export class RemediationStateMachineTarget extends Construct {
       role: remediationRole,
       environment: {
         DESIRED_CLUSTER_BACKUP_RETENTION_PERIOD: props.clusterBackupRetentionPeriod.toString()
-      }
+      },
+      tracing: lambda.Tracing.ACTIVE
     });
 
     // cluster deletion protection remediation
@@ -64,7 +66,8 @@ export class RemediationStateMachineTarget extends Construct {
       runtime: lambda.Runtime.NODEJS_16_X,
       handler: 'index.handler',
       code: lambda.Code.fromAsset('./lib/functions/cluster-deletion-protection-remediation'),
-      role: remediationRole
+      role: remediationRole,
+      tracing: lambda.Tracing.ACTIVE
     });
 
     // definition
@@ -132,7 +135,8 @@ export class RemediationStateMachineTarget extends Construct {
 
     this.stateMachine = new sf.StateMachine(this, 'RemediationStateMachine', {
       definition,
-      stateMachineName: "non-compliance-remediation-workflow"
+      stateMachineName: "non-compliance-remediation-workflow",
+      tracingEnabled: true
     });
   }
 
