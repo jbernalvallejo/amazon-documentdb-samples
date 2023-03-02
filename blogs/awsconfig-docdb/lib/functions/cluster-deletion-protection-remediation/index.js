@@ -4,6 +4,17 @@
 const aws = require('aws-sdk');
 const docDb = new aws.DocDB();
 
+class ResourceNotFoundError extends Error{
+  constructor(message) {
+    super(message);
+    this.name = 'ResourceNotFoundError';
+    this.message = message;
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, ResourceNotFoundError);
+    }
+  }
+}
+
 exports.handler = async event => {
   try {
     const {resourceId} = event;
@@ -25,13 +36,13 @@ exports.handler = async event => {
 async function getDbClusterIdentifier(resourceId) {
   try {
     const {DBClusters: clusters} = await docDb.describeDBClusters().promise();  
-    const {DBClusterIdentifier: dbClusterIdentifier} = clusters.find(c => c.DbClusterResourceId === resourceId);
+    const cluster = clusters.find(c => c.DbClusterResourceId === resourceId);
 
-    if (!dbClusterIdentifier) {
-      throw new Error(`Cluster with resourceId=${resourceId} not found`);
+    if (!cluster) {
+      throw new ResourceNotFoundError(`Cluster with resourceId=${resourceId} not found`);
     }
 
-    return dbClusterIdentifier;
+    return cluster.DBClusterIdentifier;
 
   } catch (e) {
     console.log(e);

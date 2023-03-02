@@ -70,7 +70,7 @@ export class RemediationStateMachineTarget extends Construct {
       tracing: lambda.Tracing.ACTIVE
     });
 
-    // definition
+    // state machine definition
     const notifyNonComplianceState = new tasks.SnsPublish(this, 'Notify non-compliance resource', { 
       topic,
       subject: "A non-compliant event has occurred",
@@ -80,12 +80,19 @@ export class RemediationStateMachineTarget extends Construct {
       outputPath: "$.detail"
     });
 
+    const resourceNotFoundErrorFallback = new sf.Pass(this, 'Resource not found error', {
+      result: sf.Result.fromObject({message: "The non-compliance resource was not found"})
+    });
+
     const parameterGroupRemediationState = new tasks.LambdaInvoke(this, 'Parameter group', {
       lambdaFunction: parameterGroupRemediationFn,
       payload: sf.TaskInput.fromObject({
         resourceId: sf.JsonPath.stringAt("$.resourceId")
       }),
       resultPath: sf.JsonPath.DISCARD
+    });
+    parameterGroupRemediationState.addCatch(resourceNotFoundErrorFallback, {
+      errors: ["ResourceNotFoundError"]
     });
 
     const backupRetentionRemediationState = new tasks.LambdaInvoke(this, 'Backup retention', {
@@ -95,6 +102,9 @@ export class RemediationStateMachineTarget extends Construct {
       }),
       resultPath: sf.JsonPath.DISCARD
     });
+    backupRetentionRemediationState.addCatch(resourceNotFoundErrorFallback, {
+      errors: ["ResourceNotFoundError"]
+    });
 
     const deletionProtectionRemediationState = new tasks.LambdaInvoke(this, 'Deletion protection', {
       lambdaFunction: deletionProtectionRemediationFn,
@@ -102,6 +112,9 @@ export class RemediationStateMachineTarget extends Construct {
         resourceId: sf.JsonPath.stringAt("$.resourceId")
       }),
       resultPath: sf.JsonPath.DISCARD
+    });
+    deletionProtectionRemediationState.addCatch(resourceNotFoundErrorFallback, {
+      errors: ["ResourceNotFoundError"]
     });
 
     const choice = new sf.Choice(this, 'Remediation type?', {});
@@ -130,6 +143,7 @@ export class RemediationStateMachineTarget extends Construct {
 
     remediationExecutedState.next(notifyRemediationResultState);
     remediationTypeNotFoundState.next(notifyRemediationResultState);
+    resourceNotFoundErrorFallback.next(notifyRemediationResultState);
 
     const definition = notifyNonComplianceState.next(choice);
 

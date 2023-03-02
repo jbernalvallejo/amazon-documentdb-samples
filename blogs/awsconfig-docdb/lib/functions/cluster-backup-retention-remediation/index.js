@@ -4,6 +4,17 @@
 const aws = require('aws-sdk');
 const docDb = new aws.DocDB();
 
+class ResourceNotFoundError extends Error{
+  constructor(message) {
+    super(message);
+    this.name = 'ResourceNotFoundError';
+    this.message = message;
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, ResourceNotFoundError);
+    }
+  }
+}
+
 exports.handler = async event => {
   try {
     const desiredClusterBackupRetentionPeriod = process.env.DESIRED_CLUSTER_BACKUP_RETENTION_PERIOD;
@@ -12,7 +23,6 @@ exports.handler = async event => {
       throw new Error('Desired cluster backup retention period not found');
     }
 
-    console.log(event);
     const {resourceId} = event;
     const dbClusterIdentifier = await getDbClusterIdentifier(resourceId);
     const params = {
@@ -32,13 +42,13 @@ exports.handler = async event => {
 async function getDbClusterIdentifier(resourceId) {
   try {
     const {DBClusters: clusters} = await docDb.describeDBClusters().promise();  
-    const {DBClusterIdentifier: dbClusterIdentifier} = clusters.find(c => c.DbClusterResourceId === resourceId);
+    const cluster = clusters.find(c => c.DbClusterResourceId === resourceId);
 
-    if (!dbClusterIdentifier) {
-      throw new Error(`Cluster with resourceId=${resourceId} not found`);
+    if (!cluster) {
+      throw new ResourceNotFoundError(`Cluster with resourceId=${resourceId} not found`);
     }
 
-    return dbClusterIdentifier;
+    return cluster.DBClusterIdentifier;
 
   } catch (e) {
     console.log(e);
