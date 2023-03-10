@@ -16,7 +16,7 @@ export class AmazonDocumentdbAwsConfigStack extends Stack {
   constructor(scope: Construct, id: string, props?: DocumentDbConfigStackProps) {
     super(scope, id, props);
 
-    const clusterParameterGroup = props?.clusterParameterGroup || 'blogpost-param-group';
+    const clusterParameterGroup = props?.clusterParameterGroup || 'checkride-docdb4';
     const clusterBackupRetentionPeriod = props?.backupRetentionPeriod || 7;
 
     // aws managed rules
@@ -44,7 +44,8 @@ export class AmazonDocumentdbAwsConfigStack extends Stack {
       runtime: lambda.Runtime.NODEJS_16_X,
       handler: 'index.handler',
       code: lambda.Code.fromAsset('./lib/functions/cluster-parameter-group-rule'),
-      role: clusterParameterGroupRole
+      role: clusterParameterGroupRole,
+      deadLetterQueueEnabled: true
     });
 
     new config.CustomRule(this, 'ClusterParameterGroupRule', {
@@ -69,7 +70,8 @@ export class AmazonDocumentdbAwsConfigStack extends Stack {
       runtime: lambda.Runtime.NODEJS_16_X,
       handler: 'index.handler',
       code: lambda.Code.fromAsset('./lib/functions/cluster-backup-retention-rule'),
-      role: clusterBackupRententionRole
+      role: clusterBackupRententionRole,
+      deadLetterQueueEnabled: true
     });
 
     new config.CustomRule(this, 'ClusterBackupRetentionRule', {
@@ -99,7 +101,8 @@ export class AmazonDocumentdbAwsConfigStack extends Stack {
       runtime: lambda.Runtime.NODEJS_16_X,
       handler: 'index.handler',
       code: lambda.Code.fromAsset('./lib/functions/instances-homogeneous-rule'),
-      role: instancesHomogeneousRole
+      role: instancesHomogeneousRole,
+      deadLetterQueueEnabled: true
     });
 
     new config.CustomRule(this, 'InstancesHomogeneousRule', {

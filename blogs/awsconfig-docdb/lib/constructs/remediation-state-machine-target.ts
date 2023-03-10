@@ -1,7 +1,7 @@
 import { Construct } from 'constructs';
 
 import { aws_iam as iam, aws_lambda as lambda, aws_sns as sns,
-         aws_stepfunctions as sf, aws_stepfunctions_tasks as tasks } from 'aws-cdk-lib';
+         aws_stepfunctions as sf, aws_stepfunctions_tasks as tasks, RemovalPolicy } from 'aws-cdk-lib';
 
 interface RemediationProps {
   clusterParameterGroup: string;
@@ -25,7 +25,7 @@ export class RemediationStateMachineTarget extends Construct {
     // wrong parameter group, backup retention period and deletion protection disabled 
     // as they both perform the same operations and thus require same IAM permissions 
     // with current implementation)
-    const remediationRole = new iam.Role(this, 'ParameterGroupRemediationRole', {
+    const remediationRole = new iam.Role(this, 'RemediationRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com')
     }); 
     remediationRole.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'));
@@ -46,7 +46,11 @@ export class RemediationStateMachineTarget extends Construct {
       environment: {
         DESIRED_CLUSTER_PARAMETER_GROUP: props.clusterParameterGroup
       },
-      tracing: lambda.Tracing.ACTIVE
+      tracing: lambda.Tracing.ACTIVE,
+      currentVersionOptions: {
+        removalPolicy: RemovalPolicy.RETAIN       
+      },
+      architecture: lambda.Architecture.ARM_64
     });
     const parameterGroupRemediationLiveAlias = parameterGroupRemediationFn.addAlias('live');
 
@@ -59,7 +63,11 @@ export class RemediationStateMachineTarget extends Construct {
       environment: {
         DESIRED_CLUSTER_BACKUP_RETENTION_PERIOD: props.clusterBackupRetentionPeriod.toString()
       },
-      tracing: lambda.Tracing.ACTIVE
+      tracing: lambda.Tracing.ACTIVE,
+      currentVersionOptions: {
+        removalPolicy: RemovalPolicy.RETAIN       
+      },
+      architecture: lambda.Architecture.ARM_64
     });
     const backupRetentionRemediationLiveAlias = backupRetentionRemediationFn.addAlias('live');
 
@@ -69,7 +77,11 @@ export class RemediationStateMachineTarget extends Construct {
       handler: 'index.handler',
       code: lambda.Code.fromAsset('./lib/functions/cluster-deletion-protection-remediation'),
       role: remediationRole,
-      tracing: lambda.Tracing.ACTIVE
+      tracing: lambda.Tracing.ACTIVE,
+      currentVersionOptions: {
+        removalPolicy: RemovalPolicy.RETAIN       
+      },
+      architecture: lambda.Architecture.ARM_64
     });
     const deletionProtectionRemediationLiveAlias = deletionProtectionRemediationFn.addAlias('live');
 
@@ -119,12 +131,7 @@ export class RemediationStateMachineTarget extends Construct {
     deletionProtectionRemediationState.addCatch(resourceNotFoundErrorFallback, {
       errors: ["ResourceNotFoundError"]
     });
-
-    const choice = new sf.Choice(this, 'Remediation type?', {});
-    choice.when(sf.Condition.stringEquals("$.configRuleName", "documentdb-cluster-parameter-group"), parameterGroupRemediationState);
-    choice.when(sf.Condition.stringEquals("$.configRuleName", "documentdb-cluster-backup-retention"), backupRetentionRemediationState);
-    choice.when(sf.Condition.stringEquals("$.configRuleName", "documentdb-cluster-deletion-protection-enabled"), deletionProtectionRemediationState);
-    
+ 
     const remediationExecutedState = new sf.Pass(this, 'Remediation executed', {
       result: sf.Result.fromObject({message: "The remediation for the non-compliance resource has been executed"})
     });
@@ -136,7 +143,6 @@ export class RemediationStateMachineTarget extends Construct {
     const remediationTypeNotFoundState = new sf.Pass(this, "Remediation type not found", {
       result: sf.Result.fromObject({ message: "Remediation type not found" })
     });
-    choice.otherwise(remediationTypeNotFoundState);
 
     const notifyRemediationResultState = new tasks.SnsPublish(this, 'Notify remediation result', { 
       topic,
@@ -144,11 +150,17 @@ export class RemediationStateMachineTarget extends Construct {
       message: sf.TaskInput.fromJsonPathAt("$.message")
     });
 
+    const definition = sf.Chain
+      .start(notifyNonComplianceState)
+      .next(new sf.Choice(this, 'Remediation type?', {})
+        .when(sf.Condition.stringEquals("$.configRuleName", "documentdb-cluster-parameter-group"), parameterGroupRemediationState)
+        .when(sf.Condition.stringEquals("$.configRuleName", "documentdb-cluster-backup-retention"), backupRetentionRemediationState)
+        .when(sf.Condition.stringEquals("$.configRuleName", "documentdb-cluster-deletion-protection-enabled"), deletionProtectionRemediationState)
+        .otherwise(remediationTypeNotFoundState));
+
     remediationExecutedState.next(notifyRemediationResultState);
     remediationTypeNotFoundState.next(notifyRemediationResultState);
     resourceNotFoundErrorFallback.next(notifyRemediationResultState);
-
-    const definition = notifyNonComplianceState.next(choice);
 
     this.stateMachine = new sf.StateMachine(this, 'RemediationStateMachine', {
       definition,
