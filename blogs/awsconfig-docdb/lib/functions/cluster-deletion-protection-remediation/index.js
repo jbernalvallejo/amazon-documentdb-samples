@@ -4,7 +4,7 @@
 const aws = require('aws-sdk');
 const docDb = new aws.DocDB();
 
-class ResourceNotFoundError extends Error{
+class ResourceNotFoundError extends Error {
   constructor(message) {
     super(message);
     this.name = 'ResourceNotFoundError';
@@ -25,6 +25,7 @@ exports.handler = async event => {
     };
 
     await docDb.modifyDBCluster(params).promise();
+    console.log(`DBClusterIdentifier=${dbClusterIdentifier} deletion protection enabled`);
     return;
 
   } catch (e) {

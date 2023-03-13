@@ -49,8 +49,7 @@ export class RemediationStateMachineTarget extends Construct {
       tracing: lambda.Tracing.ACTIVE,
       currentVersionOptions: {
         removalPolicy: RemovalPolicy.RETAIN       
-      },
-      architecture: lambda.Architecture.ARM_64
+      }
     });
     const parameterGroupRemediationLiveAlias = parameterGroupRemediationFn.addAlias('live');
 
@@ -66,8 +65,7 @@ export class RemediationStateMachineTarget extends Construct {
       tracing: lambda.Tracing.ACTIVE,
       currentVersionOptions: {
         removalPolicy: RemovalPolicy.RETAIN       
-      },
-      architecture: lambda.Architecture.ARM_64
+      }
     });
     const backupRetentionRemediationLiveAlias = backupRetentionRemediationFn.addAlias('live');
 
@@ -80,8 +78,7 @@ export class RemediationStateMachineTarget extends Construct {
       tracing: lambda.Tracing.ACTIVE,
       currentVersionOptions: {
         removalPolicy: RemovalPolicy.RETAIN       
-      },
-      architecture: lambda.Architecture.ARM_64
+      }
     });
     const deletionProtectionRemediationLiveAlias = deletionProtectionRemediationFn.addAlias('live');
 
